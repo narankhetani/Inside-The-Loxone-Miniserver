@@ -1,14 +1,13 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import SocketServer
-import SimpleHTTPServer
+import socketserver
+import http.server
 import urllib
 import json
 import sys
 import datetime
 import requests
-import urlparse
+import urllib.parse as urlparse
 import os
 
 # HTTP Proxy Server for the Loxone Weather Service
@@ -31,7 +30,7 @@ def downloadReport(longitude, latitude, asl):
     if r.status_code == 200:
         ret = r.content
     else:
-        print 'Error %d' % (r.status_code)
+        print('Error %d' % (r.status_code))
         ret = None
     return ret
 
@@ -204,7 +203,7 @@ def generateXML(weatherReport, asl):
     xml += '</metdata_feature_collection>\n'
     return xml
 
-class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
+class Proxy(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         path,query = self.path.split('?')
         query = urlparse.parse_qs(query)
@@ -215,7 +214,7 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Vary', 'Accept-Encoding')
             self.send_header('Connection', 'close')
-            self.send_header('Transfer-Encoding', 'chunked')
+            # self.send_header('Transfer-Encoding', 'chunked')
             if 'asl' in query:
                 asl = int(query['asl'][0])
             else:
@@ -227,19 +226,19 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 jsonReport = json.loads(downloadReport(float(long), float(lat), asl))
             if 'format' in query and int(query['format'][0]) == 1:
                 reply = generateCSV(jsonReport, asl)
-                self.send_header('Content-Type', 'text/plain')
+                self.send_header('Content-Type', 'text/html')
             else:
                 reply = generateXML(jsonReport, asl)
                 self.send_header('Content-Type', 'text/xml')
+            response = f"\r\n{reply}\r\n"
+            # response = f"{len(reply):x}\r\n{reply}\r\n"
+            # self.send_header("Content-length", len(reply))
             self.end_headers()
-            self.wfile.write("%x\r\n%s\r\n" % (len(reply), reply))
-            self.wfile.write("0\r\n\r\n")
+            self.wfile.write(response.encode())
         else:
-            print(path)
-            print(urlparse.parse_qs(query))
             self.send_response(404)
             self.end_headers()
 
-SocketServer.TCPServer.allow_reuse_address = True
-httpd = SocketServer.ForkingTCPServer(('', LOXONE_WEATHER_SERVICE_PORT), Proxy)
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.ForkingTCPServer(('', LOXONE_WEATHER_SERVICE_PORT), Proxy)
 httpd.serve_forever()
